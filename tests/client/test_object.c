@@ -15,6 +15,7 @@
  *    domedambrosio - Please refer to git log
  *    Fabien Fleutot - Please refer to git log
  *    Axel Lorente - Please refer to git log
+ *    Pascal Rieux - Please refer to git log
  *    
  *******************************************************************************/
 
@@ -64,6 +65,7 @@
  */
 
 #include "liblwm2m.h"
+#include "internals.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -159,7 +161,8 @@ static uint8_t prv_read(uint16_t instanceId,
 static uint8_t prv_write(uint16_t instanceId,
                          int numData,
                          lwm2m_tlv_t * dataArray,
-                         lwm2m_object_t * objectP)
+                         lwm2m_object_t * objectP,
+                         bool bootstrapPending)
 {
     prv_instance_t * targetP;
     int64_t value;
@@ -208,7 +211,7 @@ static uint8_t prv_create(uint16_t instanceId,
     targetP->shortID = instanceId;
     objectP->instanceList = LWM2M_LIST_ADD(objectP->instanceList, targetP);
 
-    result = prv_write(instanceId, numData, dataArray, objectP);
+    result = prv_write(instanceId, numData, dataArray, objectP, false);
 
     if (result != COAP_204_CHANGED)
     {
@@ -248,6 +251,39 @@ static uint8_t prv_exec(uint16_t instanceId,
     }
 }
 
+static void prv_test_close(lwm2m_object_t * object)
+{
+    if (object->userData != NULL) {
+        lwm2m_free(object->userData);
+        object->userData = NULL;
+    }
+    if (NULL != object->instanceList) {
+        prv_instance_t * instance = (prv_instance_t *)object->instanceList;
+        while (instance != NULL) {
+            prv_instance_t * previous_instance = instance;
+            instance = (prv_instance_t *)instance->next;
+            if (NULL != previous_instance) {
+                lwm2m_free(previous_instance);
+                previous_instance = NULL;
+            }
+        }
+    }
+}
+
+static void prv_test_print(lwm2m_object_t * objectP)
+{
+#ifdef WITH_LOGS
+    LOG("  /%u: Test object, instances:\r\n", objectP->objID);
+    prv_instance_t * instance = (prv_instance_t *)objectP->instanceList;
+    while (instance != NULL) {
+        LOG("    /%u/%u: shortId: %u, test: %u\r\n",
+                objectP->objID, instance->shortID,
+                instance->shortID, instance->test);
+        instance = (prv_instance_t *)instance->next;
+    }
+#endif
+}
+
 lwm2m_object_t * get_test_object()
 {
     lwm2m_object_t * testObj;
@@ -280,9 +316,11 @@ lwm2m_object_t * get_test_object()
          */
         testObj->readFunc = prv_read;
         testObj->writeFunc = prv_write;
+        testObj->executeFunc = prv_exec;
         testObj->createFunc = prv_create;
         testObj->deleteFunc = prv_delete;
-        testObj->executeFunc = prv_exec;
+        testObj->closeFunc = prv_test_close;
+        testObj->printFunc = prv_test_print;
     }
 
     return testObj;

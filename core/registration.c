@@ -19,6 +19,7 @@
  *    Manuel Sangoi - Please refer to git log
  *    Julien Vermillard - Please refer to git log
  *    Bosch Software Innovations GmbH - Please refer to git log
+ *    Pascal Rieux - Please refer to git log
  *
  *******************************************************************************/
 
@@ -147,6 +148,9 @@ static void prv_handleRegistrationReply(lwm2m_transaction_t * transacP,
             if (packet->code == CREATED_2_01)
             {
                 targetP->status = STATE_REGISTERED;
+                if (NULL != targetP->location) {
+                    lwm2m_free(targetP->location);
+                }
                 targetP->location = coap_get_multi_option_as_string(packet->location_path);
 
                 if (0 == lwm2m_gettimeofday(&tv, NULL)) 
@@ -225,7 +229,6 @@ static int prv_register(lwm2m_context_t * contextP, lwm2m_server_t * server)
 
 int lwm2m_start(lwm2m_context_t * contextP)
 {
-    lwm2m_server_t * targetP;
     int result;
 
     result = object_getServers(contextP);
@@ -233,7 +236,7 @@ int lwm2m_start(lwm2m_context_t * contextP)
 }
 
 static void prv_handleRegistrationUpdateReply(lwm2m_transaction_t * transacP,
-                                        void * message)
+        void * message)
 {
     lwm2m_server_t * targetP;
     coap_packet_t * packet = (coap_packet_t *)message;
@@ -298,8 +301,14 @@ static int prv_update_registration(lwm2m_context_t * contextP, lwm2m_server_t * 
 // update the registration of a given server
 int lwm2m_update_registration(lwm2m_context_t * contextP, uint16_t shortServerID)
 {
-    // look for the server
     lwm2m_server_t * targetP;
+
+    targetP = contextP->serverList;
+    if (targetP == NULL) {
+        if (object_getServers(contextP) == -1) {
+            return NOT_FOUND_4_04;
+        }
+    }
     targetP = contextP->serverList;
     while (targetP != NULL)
     {
@@ -317,79 +326,37 @@ int lwm2m_update_registration(lwm2m_context_t * contextP, uint16_t shortServerID
     return NOT_FOUND_4_04;
 }
 
-// start a device initiated bootstrap
-// reach 
-static int lwm2m_bootstrap(lwm2m_context_t * contextP) {
-    // find the first bootstrap server
-    /*lwm2m_server_t * targetP = contextP->bootstrapServerList;
+// for each server update the registration if needed
+int lwm2m_update_registrations(lwm2m_context_t * contextP,
+        uint32_t currentTime,
+        struct timeval * timeoutP)
+{
+    lwm2m_server_t * targetP = contextP->serverList;
     while (targetP != NULL)
     {
-
-        transaction = transaction_new(COAP_PUT, NULL, contextP->nextMID++, ENDPOINT_SERVER, (void *)server);
-        if (transaction == NULL) return INTERNAL_SERVER_ERROR_5_00;
-
-        coap_set_header_uri_path(transaction->message, server->location);
-
-        transaction->callback = prv_handleBootstrapReply;
-        transaction->userData = (void *) targetP;
-
-        contextP->transactionList = (lwm2m_transaction_t *)LWM2M_LIST_ADD(contextP->transactionList, transaction);
-
-        if (transaction_send(contextP, transaction) == 0)
+        switch (targetP->status)
         {
-            server->mid = transaction->mID;
-
+            case STATE_REGISTERED:
+                if (targetP->registration + targetP->lifetime - timeoutP->tv_sec <= currentTime)
+                {
+                    prv_update_registration(contextP, targetP);
+                }
+                break;
+            case STATE_DEREGISTERED:
+                // TODO: is it disabled?
+                prv_register(contextP, targetP);
+                break;
+            case STATE_REG_PENDING:
+                break;
+            case STATE_REG_UPDATE_PENDING:
+                // TODO: check for timeout and retry?
+                break;
+            case STATE_DEREG_PENDING:
+                break;
+            case STATE_REG_FAILED:
+                break;
         }
-        break;
-    }*/
-    return 0;
-}
-
-// for each server update the registration if needed
-int lwm2m_update_registrations(lwm2m_context_t * contextP, uint32_t currentTime, struct timeval * timeoutP)
-{
-    lwm2m_server_t * targetP;
-    bool needBootstrap = true;
-
-    if (contextP->bsState == BOOTSTRAPED)
-    {
-        targetP = contextP->serverList;
-        while (targetP != NULL)
-        {
-            switch (targetP->status)
-            {
-                case STATE_REGISTERED:
-                    needBootstrap = false;
-                    if (targetP->registration + targetP->lifetime - timeoutP->tv_sec <= currentTime)
-                    {
-                        prv_update_registration(contextP, targetP);
-                    }
-                    break;
-                case STATE_DEREGISTERED:
-                    // TODO: is it disabled?
-                    prv_register(contextP, targetP);
-                    break;
-                case STATE_REG_PENDING:
-                    needBootstrap = false;
-                    break;
-                case STATE_REG_UPDATE_PENDING:
-                    needBootstrap = false;
-                    // TODO: check for timeout and retry?
-                    break;
-                case STATE_DEREG_PENDING:
-                    break;
-                case STATE_REG_FAILED:
-                    break;
-            }
-            targetP = targetP->next;
-        }
-    }
-
-    if (needBootstrap)
-    {
-        // no DM server currently able to register
-        // let's trigger a device initiated bootstrap
-        lwm2m_bootstrap(contextP);
+        targetP = targetP->next;
     }
     return 0;
 }
