@@ -14,6 +14,7 @@
  *    David Navarro, Intel Corporation - initial API and implementation
  *    domedambrosio - Please refer to git log
  *    Toby Jaffey - Please refer to git log
+ *    Pascal Rieux - Please refer to git log
  *    
  *******************************************************************************/
 /*
@@ -152,6 +153,11 @@ coap_status_t handle_dm_request(lwm2m_context_t * contextP,
     }
 
     return result;
+}
+
+coap_status_t handle_delete_all(lwm2m_context_t * contextP)
+{
+    return object_delete_all(contextP);
 }
 #endif
 

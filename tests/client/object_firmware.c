@@ -14,6 +14,7 @@
  *    Julien Vermillard - initial implementation
  *    Fabien Fleutot - Please refer to git log
  *    David Navarro, Intel Corporation - Please refer to git log
+ *    Pascal Rieux - Please refer to git log
  *    
  *******************************************************************************/
 
@@ -33,7 +34,7 @@
  */
 
 #include "liblwm2m.h"
-
+#include "internals.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -128,7 +129,8 @@ static uint8_t prv_firmware_read(uint16_t instanceId,
 static uint8_t prv_firmware_write(uint16_t instanceId,
                                   int numData,
                                   lwm2m_tlv_t * dataArray,
-                                  lwm2m_object_t * objectP)
+                                  lwm2m_object_t * objectP,
+                                  bool bootstrapPending)
 {
     int i;
     bool bvalue;
@@ -214,6 +216,26 @@ static uint8_t prv_firmware_execute(uint16_t instanceId,
     }
 }
 
+static void prv_firmware_close(lwm2m_object_t * objectP) {
+    if (NULL != objectP->userData) {
+        lwm2m_free(objectP->userData);
+        objectP->userData = NULL;
+    }
+}
+
+static void prv_firmware_print(lwm2m_object_t * objectP)
+{
+#ifdef WITH_LOGS
+    firmware_data_t * data = (firmware_data_t *)objectP->userData;
+    LOG("  /%u: Firmware object:\r\n", objectP->objID);
+    if (NULL != data)
+    {
+        LOG("    state: %u, supported: %u, result: %u\r\n",
+                data->state, data->supported, data->result);
+    }
+#endif
+}
+
 lwm2m_object_t * get_object_firmware()
 {
     /*
@@ -241,7 +263,11 @@ lwm2m_object_t * get_object_firmware()
         firmwareObj->readFunc = prv_firmware_read;
         firmwareObj->writeFunc = prv_firmware_write;
         firmwareObj->executeFunc = prv_firmware_execute;
+
         firmwareObj->userData = lwm2m_malloc(sizeof(firmware_data_t));
+
+        firmwareObj->closeFunc = prv_firmware_close;
+        firmwareObj->printFunc = prv_firmware_print;
 
         /*
          * Also some user data can be stored in the object with a private structure containing the needed variables
